@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>カロリー記録</title>
+<!-- スマホ（ホーム画面アプリ）用の設定 -->
+<meta name="theme-color" content="#2f8f5b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="カロリー記録">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  :root {
+    --bg: #f6f7f4;
+    --card: #ffffff;
+    --text: #1f2a24;
+    --sub: #6b7670;
+    --main: #2f8f5b;
+    --main-light: #e3f2e9;
+    --warn: #d9534f;
+    --line: #e4e7e2;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body { -webkit-tap-highlight-color: transparent; }
+  /* iPhoneの画面上部（ノッチ）や下部のバーに隠れないよう余白をとる */
+  .wrap {
+    max-width: 480px; margin: 0 auto;
+    padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  }
+  /* iPhoneは16px未満の入力欄をタップすると勝手にズームするので16pxに固定 */
+  input, select { font-size: 16px !important; }
+  h1 { font-size: 20px; margin: 8px 0 16px; }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .date-row { display: flex; align-items: center; gap: 8px; }
+  .date-row input { flex: 1; text-align: center; }
+  button {
+    font: inherit;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+    background: var(--main-light);
+    color: var(--main);
+    font-weight: 600;
+  }
+  button.primary { background: var(--main); color: #fff; width: 100%; padding: 12px; }
+  button.icon { padding: 8px 12px; }
+  input, select {
+    font: inherit;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--text);
+  }
+  label { font-size: 13px; color: var(--sub); display: block; margin: 10px 0 4px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; }
+
+  /* 合計 */
+  .total-num { font-size: 36px; font-weight: 700; }
+  .total-num small { font-size: 15px; color: var(--sub); font-weight: 400; }
+  .bar { height: 10px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 10px 0 6px; }
+  .bar > div { height: 100%; background: var(--main); width: 0; transition: width .3s; }
+  .bar.over > div { background: var(--warn); }
+  .remain { font-size: 14px; color: var(--sub); }
+  .remain.over { color: var(--warn); font-weight: 600; }
+  .goal-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  .goal-row input { width: 120px; flex: none; }
+  .goal-row span { font-size: 13px; color: var(--sub); }
+
+  /* 記録リスト */
+  .meal { margin-top: 14px; }
+  .meal:first-child { margin-top: 0; }
+  .meal-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--sub); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+  .item { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+  .item:last-child { border-bottom: none; }
+  .item .kcal { font-weight: 600; margin-right: 8px; white-space: nowrap; }
+  .del { background: none; color: var(--sub); padding: 4px 8px; font-size: 18px; }
+  .empty { color: var(--sub); font-size: 14px; text-align: center; padding: 12px 0; }
+
+  /* よく食べるもの */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { background: var(--bg); color: var(--text); font-weight: 400; font-size: 13px; padding: 6px 10px; border-radius: 99px; }
+  .section-title { font-size: 15px; font-weight: 700; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🍙 カロリー記録</h1>
+
+  <!-- 日付 -->
+  <div class="card date-row">
+    <button class="icon" id="prevDay" aria-label="前の日">◀</button>
+    <input type="date" id="date">
+    <button class="icon" id="nextDay" aria-label="次の日">▶</button>
+  </div>
+
+  <!-- 合計と目標 -->
+  <div class="card">
+    <div class="total-num"><span id="total">0</span> <small>kcal</small></div>
+    <div class="bar" id="bar"><div></div></div>
+    <div class="remain" id="remain">目標を入れると、あと何kcalか表示されるよ</div>
+    <div class="goal-row">
+      <input type="number" id="goal" min="0" inputmode="numeric" placeholder="目標kcal">
+      <span>1日の目標（自分で決めた数字を入れてね）</span>
+    </div>
+  </div>
+
+  <!-- 入力 -->
+  <div class="card">
+    <p class="section-title">食べたものを追加</p>
+    <label for="meal">いつ</label>
+    <select id="meal">
+      <option>朝ごはん</option>
+      <option>昼ごはん</option>
+      <option>夜ごはん</option>
+      <option>間食</option>
+    </select>
+    <div class="row">
+      <div>
+        <label for="food">食べたもの</label>
+        <input type="text" id="food" placeholder="例：おにぎり">
+      </div>
+      <div style="flex:0 0 110px">
+        <label for="kcal">kcal</label>
+        <input type="number" id="kcal" min="0" inputmode="numeric" placeholder="0">
+      </div>
+    </div>
+    <div style="margin-top:12px"><button class="primary" id="add">追加する</button></div>
+
+    <div id="recentWrap" style="display:none">
+      <label>前に食べたもの（タップで入力）</label>
+      <div class="chips" id="recent"></div>
+    </div>
+  </div>
+
+  <!-- 一覧 -->
+  <div class="card">
+    <p class="section-title">この日の記録</p>
+    <div id="list"></div>
+  </div>
+</div>
+
+<script>
+  // ---- データ保存（ブラウザの中に保存される）----
+  const KEY = "diet-app-v1";
+  const data = JSON.parse(localStorage.getItem(KEY) || '{"goal":null,"days":{}}');
+  const save = () => localStorage.setItem(KEY, JSON.stringify(data));
+
+  const MEALS = ["朝ごはん", "昼ごはん", "夜ごはん", "間食"];
+  const $ = (id) => document.getElementById(id);
+
+  // ---- 日付まわり ----
+  const toStr = (d) => {
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, "0"), day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+  $("date").value = toStr(new Date());
+  const shiftDay = (n) => {
+    const d = new Date($("date").value + "T00:00:00");
+    d.setDate(d.getDate() + n);
+    $("date").value = toStr(d);
+    render();
+  };
+  $("prevDay").onclick = () => shiftDay(-1);
+  $("nextDay").onclick = () => shiftDay(1);
+  $("date").onchange = render;
+
+  // ---- 目標 ----
+  if (data.goal) $("goal").value = data.goal;
+  $("goal").oninput = () => {
+    const v = parseInt($("goal").value, 10);
+    data.goal = v > 0 ? v : null;
+    save();
+    render();
+  };
+
+  // ---- 追加 ----
+  $("add").onclick = () => {
+    const food = $("food").value.trim();
+    const kcal = parseInt($("kcal").value, 10);
+    if (!food) { $("food").focus(); return; }
+    if (isNaN(kcal) || kcal < 0) { $("kcal").focus(); return; }
+    const day = $("date").value;
+    (data.days[day] ||= []).push({ id: Date.now(), meal: $("meal").value, food, kcal });
+    save();
+    $("food").value = "";
+    $("kcal").value = "";
+    render();
+  };
+  $("kcal").addEventListener("keydown", (e) => { if (e.key === "Enter") $("add").click(); });
+
+  // ---- 削除 ----
+  function remove(id) {
+    const day = $("date").value;
+    data.days[day] = (data.days[day] || []).filter((x) => x.id !== id);
+    save();
+    render();
+  }
+
+  // ---- 前に食べたもの（自分の記録から作る）----
+  function recentFoods() {
+    const map = new Map();
+    Object.keys(data.days).sort().forEach((d) =>
+      data.days[d].forEach((x) => map.set(x.food, x.kcal))
+    );
+    return [...map.entries()].reverse().slice(0, 12);
+  }
+
+  // ---- 画面を描く ----
+  function render() {
+    const items = data.days[$("date").value] || [];
+    const total = items.reduce((s, x) => s + x.kcal, 0);
+    $("total").textContent = total.toLocaleString();
+
+    // 目標バー
+    const bar = $("bar"), remain = $("remain");
+    if (data.goal) {
+      const pct = Math.min(100, (total / data.goal) * 100);
+      bar.firstElementChild.style.width = pct + "%";
+      const left = data.goal - total;
+      bar.classList.toggle("over", left < 0);
+      remain.classList.toggle("over", left < 0);
+      remain.textContent = left >= 0
+        ? `目標まで あと ${left.toLocaleString()} kcal`
+        : `目標を ${(-left).toLocaleString()} kcal オーバー`;
+    } else {
+      bar.firstElementChild.style.width = "0";
+      bar.classList.remove("over");
+      remain.classList.remove("over");
+      remain.textContent = "目標を入れると、あと何kcalか表示されるよ";
+    }
+
+    // 一覧
+    const list = $("list");
+    list.innerHTML = "";
+    if (!items.length) {
+      list.innerHTML = '<div class="empty">まだ記録がないよ</div>';
+    } else {
+      MEALS.forEach((meal) => {
+        const group = items.filter((x) => x.meal === meal);
+        if (!group.length) return;
+        const sum = group.reduce((s, x) => s + x.kcal, 0);
+        const box = document.createElement("div");
+        box.className = "meal";
+        box.innerHTML = `<div class="meal-head"><span>${meal}</span><span>${sum.toLocaleString()} kcal</span></div>`;
+        group.forEach((x) => {
+          const row = document.createElement("div");
+          row.className = "item";
+          const name = document.createElement("span");
+          name.textContent = x.food;
+          const right = document.createElement("span");
+          right.innerHTML = `<span class="kcal">${x.kcal.toLocaleString()} kcal</span>`;
+          const del = document.createElement("button");
+          del.className = "del";
+          del.textContent = "×";
+          del.setAttribute("aria-label", "削除");
+          del.onclick = () => { if (confirm(`「${x.food}」を消す？`)) remove(x.id); };
+          right.appendChild(del);
+          row.append(name, right);
+          box.appendChild(row);
+        });
+        list.appendChild(box);
+      });
+    }
+
+    // 前に食べたもの
+    const recent = recentFoods();
+    $("recentWrap").style.display = recent.length ? "block" : "none";
+    const chips = $("recent");
+    chips.innerHTML = "";
+    recent.forEach(([food, kcal]) => {
+      const c = document.createElement("button");
+      c.className = "chip";
+      c.textContent = `${food}（${kcal}）`;
+      c.onclick = () => { $("food").value = food; $("kcal").value = kcal; };
+      chips.appendChild(c);
+    });
+  }
+
+  render();
+</script>
+</body>
+</html>
