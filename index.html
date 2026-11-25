@@ -181,6 +181,32 @@
   svg.chart text { font-family: inherit; fill: var(--sub); font-size: 11px; }
   .chart-empty { color: var(--sub); font-size: 14px; text-align: center; padding: 40px 0; }
 
+  /* 目標プラン */
+  details.plan > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+  details.plan > summary::-webkit-details-marker { display: none; }
+  details.plan > summary::after { content: "▾"; color: var(--sub); transition: transform .2s; }
+  details.plan[open] > summary::after { transform: rotate(180deg); }
+  details.plan > summary .section-title { margin: 0; }
+  .seg.small button { padding: 7px 4px; font-size: 14px; }
+  .plan-result { background: var(--bg); border-radius: 10px; padding: 12px; margin-top: 12px; font-size: 14px; line-height: 1.7; }
+  .plan-result .big { font-size: 26px; font-weight: 700; }
+  .plan-result .warn { color: var(--warn); font-weight: 600; }
+  .plan-result .calc { color: var(--sub); font-size: 12px; }
+  .source { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  /* アドバイス */
+  .advice { list-style: none; padding: 0; margin: 0; }
+  .advice li { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 1.6; }
+  .advice li:last-child { border-bottom: none; }
+  .advice .ic { flex: none; width: 24px; text-align: center; }
+  .advice .warn { color: var(--warn); font-weight: 600; }
+  .pfc { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+  .pfc div { background: var(--bg); border-radius: 8px; padding: 6px; text-align: center; font-size: 12px; color: var(--sub); }
+  .pfc b { display: block; font-size: 15px; color: var(--text); }
+  .counter { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .counter button { padding: 6px 14px; font-size: 18px; }
+  .counter .n { font-size: 20px; font-weight: 700; min-width: 2em; text-align: center; }
+
   /* 設定 */
   .setting { padding: 12px 0; border-bottom: 1px solid var(--line); }
   .setting:last-child { border-bottom: none; padding-bottom: 0; }
@@ -225,9 +251,39 @@
     <div class="remain" id="remain"></div>
     <div class="goal-row">
       <input type="number" id="goal" min="0" inputmode="numeric" placeholder="目標kcal">
-      <span>1日の目標（自分で決めた数字を入れてね）</span>
+      <span>1日の目標（下の「目標を自動で決める」でも入るよ）</span>
     </div>
   </div>
+
+  <!-- 目標プラン（自動計算） -->
+  <details class="card plan" id="planCard">
+    <summary><p class="section-title">🎯 目標を自動で決める</p></summary>
+    <label>性別</label>
+    <div class="seg small" id="sexSeg" style="margin-bottom:0">
+      <button data-v="m">男性</button>
+      <button data-v="f">女性</button>
+    </div>
+    <div class="row">
+      <div><label for="age">年齢</label><input type="number" id="age" min="18" max="120" inputmode="numeric" placeholder="歳"></div>
+      <div><label for="height">身長</label><input type="number" id="height" min="100" max="250" step="0.1" inputmode="decimal" placeholder="cm"></div>
+    </div>
+    <label>ふだんの運動量（迷ったら「ふつう」）</label>
+    <div class="seg small" id="actSeg" style="margin-bottom:0">
+      <button data-v="low">低い</button>
+      <button data-v="mid">ふつう</button>
+      <button data-v="high">高い</button>
+    </div>
+    <div class="row">
+      <div><label for="loseKg">何kg痩せたい？</label><input type="number" id="loseKg" min="0" step="0.5" inputmode="decimal" placeholder="kg"></div>
+      <div><label for="months">何か月で？</label><input type="number" id="months" min="1" step="1" inputmode="numeric" placeholder="か月"></div>
+    </div>
+    <div class="plan-result" id="planResult"></div>
+    <div style="margin-top:10px"><button class="primary" id="applyPlan" disabled>この数字を目標にする</button></div>
+    <div class="source">
+      計算のもと：厚生労働省「日本人の食事摂取基準（2025年版）」の推定エネルギー必要量・目標とするBMI、e-ヘルスネット（体脂肪1kg＝約7,000kcal）、神奈川県（まずは1か月1kg減）。<br>
+      平均的な体格を想定した目安だよ。体重の変化を見ながら調整してね。病気の治療中の人や持病がある人は、医師に相談してね。
+    </div>
+  </details>
 
   <!-- 体重 -->
   <div class="card">
@@ -288,6 +344,12 @@
     <div class="hint" id="listHint" style="display:none">記録をタップすると直せるよ／「☆セット」でいつものメニューとして登録</div>
   </div>
 
+  <!-- アドバイス -->
+  <div class="card">
+    <p class="section-title">💡 アドバイス</p>
+    <ul class="advice" id="advice"></ul>
+  </div>
+
   <!-- ふりかえり -->
   <div class="card">
     <p class="section-title">この7日間のふりかえり</p>
@@ -342,6 +404,9 @@
     if (d.goal === undefined) d.goal = null;
     if (d.goalWeight === undefined) d.goalWeight = null;
     d.theme ||= "auto";
+    d.profile ||= {};      // からだの情報（性別・年齢・身長・運動量）
+    d.plan ||= {};         // 何kgを何か月で
+    d.balanced ||= {};     // 主食・主菜・副菜がそろった食事の回数（日付ごと）
     return d;
   }
   normalize(data);
@@ -668,6 +733,190 @@
     });
   }
 
+  // ---- 目標プラン（自動計算） ----
+  // 出典：厚生労働省「日本人の食事摂取基準（2025年版）」参考表２ 推定エネルギー必要量（kcal/日）
+  const EER = {
+    m: { "18-29": [2250, 2600, 3000], "30-49": [2350, 2750, 3150], "50-64": [2250, 2650, 3000], "65-74": [2100, 2350, 2650], "75+": [1850, 2250, null] },
+    f: { "18-29": [1700, 1950, 2250], "30-49": [1750, 2050, 2350], "50-64": [1700, 1950, 2250], "65-74": [1650, 1850, 2050], "75+": [1450, 1750, null] },
+  };
+  // 同 表１ 目標とするBMIの範囲
+  const BMI_RANGE = { "18-29": [18.5, 24.9], "30-49": [18.5, 24.9], "50-64": [20.0, 24.9], "65-74": [21.5, 24.9], "75+": [21.5, 24.9] };
+  // 同 エネルギー産生栄養素バランス（%エネルギー）たんぱく質の下限は年齢で変わる
+  const PROTEIN_MIN = { "18-29": 13, "30-49": 13, "50-64": 14, "65-74": 15, "75+": 15 };
+  const KCAL_PER_KG_FAT = 7000; // e-ヘルスネット：体脂肪1kg ≒ 7,000kcal
+  const ACT = ["low", "mid", "high"];
+  const ACT_LABEL = { low: "低い", mid: "ふつう", high: "高い" };
+
+  const ageGroup = (age) => (age >= 75 ? "75+" : age >= 65 ? "65-74" : age >= 50 ? "50-64" : age >= 30 ? "30-49" : age >= 18 ? "18-29" : null);
+  const bmi = (w, hcm) => w / Math.pow(hcm / 100, 2);
+
+  function setupSeg(id, key) {
+    document.querySelectorAll(`#${id} button`).forEach((b) => {
+      b.onclick = () => { data.profile[key] = b.dataset.v; save(); renderPlan(); };
+    });
+  }
+  setupSeg("sexSeg", "sex");
+  setupSeg("actSeg", "act");
+  const PLAN_INPUTS = [["age", () => data.profile, "age"], ["height", () => data.profile, "height"], ["loseKg", () => data.plan, "kg"], ["months", () => data.plan, "months"]];
+  const fillPlanInputs = () => PLAN_INPUTS.forEach(([id, obj, key]) => ($(id).value = obj()[key] ?? ""));
+  const bindNum = (id, obj, key) => {
+    $(id).oninput = () => {
+      const n = parseFloat($(id).value);
+      obj()[key] = isNaN(n) ? null : n;
+      save();
+      renderPlan();
+    };
+  };
+  PLAN_INPUTS.forEach((a) => bindNum(...a));
+  fillPlanInputs();
+  $("planCard").open = !data.goal; // 目標kcalが未設定なら最初から開いておく
+
+  function calcPlan() {
+    const p = data.profile, pl = data.plan;
+    if (!p.sex || !p.age || !p.act) return { msg: "性別・年齢・運動量を入れると、1日の目安が出るよ" };
+    const g = ageGroup(p.age);
+    if (!g) return { msg: "この計算は18歳以上向けだよ" };
+    let act = p.act, note = "";
+    if (EER[p.sex][g][ACT.indexOf(act)] == null) { act = "mid"; note = "（75歳以上は「高い」の値がないので「ふつう」で計算）"; }
+    const eer = EER[p.sex][g][ACT.indexOf(act)];
+    const r = { g, eer, act, note };
+    if (!pl.kg || !pl.months) { r.msg = "何kgを何か月で痩せたいか入れると、目標kcalが出るよ"; return r; }
+    const s = toDate(today()), e = new Date(s);
+    e.setMonth(e.getMonth() + pl.months);
+    const days = Math.round((e - s) / 86400000);
+    r.days = days;
+    r.deficit = Math.round((pl.kg * KCAL_PER_KG_FAT) / days);
+    r.target = Math.round((eer - r.deficit) / 10) * 10;
+    r.pace = pl.kg / pl.months;
+    const lw = latestWeight(today());
+    if (lw) {
+      r.nowW = lw.v;
+      r.goalW = Math.round((lw.v - pl.kg) * 10) / 10;
+      if (p.height) {
+        r.bmiNow = bmi(lw.v, p.height);
+        r.bmiGoal = bmi(r.goalW, p.height);
+        r.bmiRange = BMI_RANGE[g];
+      }
+    }
+    return r;
+  }
+
+  function renderPlan() {
+    document.querySelectorAll("#sexSeg button").forEach((b) => b.classList.toggle("on", b.dataset.v === data.profile.sex));
+    document.querySelectorAll("#actSeg button").forEach((b) => b.classList.toggle("on", b.dataset.v === data.profile.act));
+    const r = calcPlan();
+    const box = $("planResult");
+    $("applyPlan").disabled = !(r.target > 0);
+    if (!r.eer) { box.innerHTML = r.msg; return; }
+    let h = `<div>今の体重を保つ目安：<b>${r.eer.toLocaleString()} kcal/日</b> ${r.note}</div>`;
+    if (r.msg) { box.innerHTML = h + `<div class="calc">${r.msg}</div>`; return; }
+    if (r.target <= 0) {
+      box.innerHTML = h + `<div class="warn">この期間だと計算が成り立たないよ。期間を延ばすか、目標kgを減らしてね</div>`;
+      return;
+    }
+    h += `<div style="margin-top:6px">1日の目標</div><div class="big">${r.target.toLocaleString()} kcal</div>`;
+    h += `<div class="calc">${r.eer.toLocaleString()} − ${r.deficit.toLocaleString()}（${data.plan.kg}kg × 7,000kcal ÷ ${r.days}日）</div>`;
+    if (r.pace > 1) h += `<div class="warn">1か月に約${fmt1(r.pace)}kgのペース。「まずは1か月1kg減」が目安とされてるから、期間を延ばすのがおすすめ</div>`;
+    if (r.goalW != null) h += `<div>目標体重：<b>${fmt1(r.goalW)} kg</b>（最新 ${fmt1(r.nowW)} kg から −${fmt1(data.plan.kg)} kg）</div>`;
+    else h += `<div class="calc">体重を記録すると、目標体重も一緒に設定できるよ</div>`;
+    if (r.bmiGoal != null) {
+      const [lo, hi] = r.bmiRange;
+      h += `<div>BMI：今 ${fmt1(r.bmiNow)} → 目標 ${fmt1(r.bmiGoal)}（あなたの年齢の目標範囲 ${fmt1(lo)}〜${fmt1(hi)}）</div>`;
+      if (r.bmiGoal < lo) h += `<div class="warn">目標体重だとBMIが目標範囲より低くなるよ。痩せすぎに注意して、目標を見直してね</div>`;
+    }
+    box.innerHTML = h;
+  }
+
+  $("applyPlan").onclick = () => {
+    const r = calcPlan();
+    if (!(r.target > 0)) return;
+    const extra = r.pace > 1 ? "\n※ペースが速めだよ" : "";
+    if (!confirm(`1日の目標を ${r.target.toLocaleString()} kcal${r.goalW != null ? `、目標体重を ${fmt1(r.goalW)} kg` : ""} にするね。いい？${extra}`)) return;
+    data.goal = r.target;
+    if (r.goalW != null) data.goalWeight = r.goalW;
+    data.plan.appliedAt = today();
+    save();
+    $("goal").value = data.goal;
+    if (r.goalW != null) $("goalWeight").value = data.goalWeight;
+    render();
+  };
+
+  // ---- アドバイス（決まったルールで出す） ----
+  $("advice").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-bal]");
+    if (!b) return;
+    const d = $("date").value;
+    const n = Math.max(0, Math.min(5, (data.balanced[d] || 0) + Number(b.dataset.bal)));
+    if (n) data.balanced[d] = n; else delete data.balanced[d];
+    save();
+    renderAdvice();
+  });
+
+  function renderAdvice() {
+    const day = $("date").value;
+    const its = items(day);
+    const total = dayTotal(day);
+    const list = [];
+    const add = (ic, html) => list.push(`<li><span class="ic">${ic}</span><div>${html}</div></li>`);
+
+    // 1. 残りカロリーと、まだ記録してない食事
+    if (data.goal) {
+      const left = data.goal - total;
+      const missing = ["朝ごはん", "昼ごはん", "夜ごはん"].filter((m) => !its.some((x) => x.meal === m));
+      if (left < 0) {
+        add("⚠️", `<span class="warn">目標を ${(-left).toLocaleString()} kcal オーバー。</span>${missing.length ? `${missing.join("・")}は軽めにするか、` : ""}明日で調整しよう。1日で取り返そうとしなくて大丈夫`);
+      } else if (missing.length) {
+        const per = Math.round(left / missing.length / 10) * 10;
+        add("🍽️", `残り <b>${left.toLocaleString()} kcal</b>。まだ記録がないのは${missing.join("・")}。${missing.length > 1 ? `1食あたり約${per.toLocaleString()} kcalが目安だよ` : `${missing[0]}は ${left.toLocaleString()} kcal までOK`}`);
+      } else {
+        add("✅", `3食とも記録できてるね。残りは <b>${left.toLocaleString()} kcal</b>`);
+      }
+    } else {
+      add("🎯", "1日の目標kcalを決めると、残りカロリーや1食の目安が出るよ。「目標を自動で決める」から計算できる");
+    }
+
+    // 2. 主食・主菜・副菜
+    const bal = data.balanced[day] || 0;
+    add("🥗", `主食（ごはん・パン・麺）、主菜（肉・魚・卵・大豆製品）、副菜（野菜・きのこ・海藻）がそろった食事を<b>1日2回以上</b>とるのが国の健康づくりの目標だよ。
+      <div class="counter"><button data-bal="-1" aria-label="へらす">−</button><span class="n">${bal}</span><button data-bal="1" aria-label="ふやす">＋</button><span class="chart-sub">この日そろった回数</span></div>
+      ${bal >= 2 ? '<div style="margin-top:4px">👍 2回クリア！</div>' : its.length ? '<div class="chart-sub" style="margin-top:4px">足りないときは、まず副菜（野菜のおかず）を1品足すところから</div>' : ""}`);
+
+    // 3. たんぱく質・脂質・炭水化物の目安（g）
+    if (data.goal) {
+      const g = ageGroup(data.profile.age || 20) || "18-29";
+      const pmin = PROTEIN_MIN[g];
+      const gram = (pct, k) => Math.round((data.goal * pct) / 100 / k);
+      add("📊", `1日 ${data.goal.toLocaleString()} kcal のときの目安
+        <div class="pfc">
+          <div>たんぱく質<b>${gram(pmin, 4)}〜${gram(20, 4)}g</b>${pmin}〜20%</div>
+          <div>脂質<b>${gram(20, 9)}〜${gram(30, 9)}g</b>20〜30%</div>
+          <div>炭水化物<b>${gram(50, 4)}〜${gram(65, 4)}g</b>50〜65%</div>
+        </div>
+        <div class="chart-sub" style="margin-top:4px">カロリーを減らすときも、たんぱく質（主菜）は減らしすぎないのがポイント</div>`);
+    }
+
+    // 4. 間食
+    const snack = its.filter((x) => x.meal === "間食").reduce((s, x) => s + x.kcal, 0);
+    if (snack > 0 && total > 0) add("🍫", `間食は ${snack.toLocaleString()} kcal（この日の${Math.round((snack / total) * 100)}%）。減らすならまずここから見直すと手軽だよ`);
+
+    // 5. 体重の動き（目安の表は平均的な体格向けなので、体重の変化で確認する）
+    const ws = Object.keys(data.weights).filter((d) => d > addDays(day, -14) && d <= day).sort();
+    const recent7 = Array.from({ length: 7 }, (_, i) => addDays(day, -i)).filter(hasFood);
+    if (data.goal && ws.length >= 2 && recent7.length >= 4) {
+      const diff = data.weights[ws[ws.length - 1]] - data.weights[ws[0]];
+      const avg = Math.round(recent7.reduce((a, d) => a + dayTotal(d), 0) / recent7.length);
+      if (avg <= data.goal && diff >= 0) {
+        add("🔍", `目標kcal以内（7日平均 ${avg.toLocaleString()} kcal）なのに、2週間で体重が減ってない（${signed(diff)} kg）。目安の数字は平均的な体格向けだから、記録もれがないか見直すか、目標を少し下げてみてもいいかも`);
+      } else if (diff < 0) {
+        add("📉", `この2週間で ${signed(diff)} kg。いい調子！`);
+      }
+    } else if (!Object.keys(data.weights).length) {
+      add("⚖️", "体重も記録すると、目標の数字が自分に合ってるかチェックできるよ");
+    }
+
+    $("advice").innerHTML = list.join("");
+  }
+
   // ---- ふりかえり ----
   function renderReview() {
     const end = $("date").value;
@@ -893,6 +1142,7 @@
       save();
       $("goal").value = data.goal || "";
       $("goalWeight").value = data.goalWeight || "";
+      fillPlanInputs();
       cancelEdit();
       applyTheme();
       render();
@@ -912,6 +1162,8 @@
     renderSets();
     renderList();
     renderRecent();
+    renderPlan();
+    renderAdvice();
     renderReview();
     renderChart();
   }
