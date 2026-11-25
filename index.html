@@ -87,6 +87,11 @@
     font-weight: 600;
   }
   button.primary { background: var(--main); color: var(--on-main); width: 100%; padding: 12px; }
+  button.primary.off { background: var(--line); color: var(--sub); }
+  .plan-msg { font-size: 14px; margin-top: 8px; line-height: 1.6; }
+  .plan-msg.ok { color: var(--main); font-weight: 600; }
+  .plan-msg.ng { color: var(--warn); font-weight: 600; }
+  .plan-msg button { margin-left: 6px; padding: 4px 10px; font-size: 13px; }
   button.ghost { background: none; color: var(--sub); width: 100%; padding: 8px; font-weight: 400; }
   button.icon { padding: 8px 12px; }
   input, select {
@@ -278,7 +283,8 @@
       <div><label for="months">何か月で？</label><input type="number" id="months" min="1" step="1" inputmode="numeric" placeholder="か月"></div>
     </div>
     <div class="plan-result" id="planResult"></div>
-    <div style="margin-top:10px"><button class="primary" id="applyPlan" disabled>この数字を目標にする</button></div>
+    <div style="margin-top:10px"><button class="primary off" id="applyPlan" type="button">この数字を目標にする</button></div>
+    <div class="plan-msg" id="planMsg"></div>
     <div class="source">
       計算のもと：厚生労働省「日本人の食事摂取基準（2025年版）」の推定エネルギー必要量・目標とするBMI、e-ヘルスネット（体脂肪1kg＝約7,000kcal）、神奈川県（まずは1か月1kg減）。<br>
       平均的な体格を想定した目安だよ。体重の変化を見ながら調整してね。病気の治療中の人や持病がある人は、医師に相談してね。
@@ -806,7 +812,8 @@
     document.querySelectorAll("#actSeg button").forEach((b) => b.classList.toggle("on", b.dataset.v === data.profile.act));
     const r = calcPlan();
     const box = $("planResult");
-    $("applyPlan").disabled = !(r.target > 0);
+    $("applyPlan").classList.toggle("off", !(r.target > 0));
+    if ($("planMsg").classList.contains("ng") && r.target > 0) $("planMsg").innerHTML = "";
     if (!r.eer) { box.innerHTML = r.msg; return; }
     let h = `<div>今の体重を保つ目安：<b>${r.eer.toLocaleString()} kcal/日</b> ${r.note}</div>`;
     if (r.msg) { box.innerHTML = h + `<div class="calc">${r.msg}</div>`; return; }
@@ -827,11 +834,30 @@
     box.innerHTML = h;
   }
 
+  // まだ入ってない項目を教える
+  function missingPlanItems() {
+    const p = data.profile, pl = data.plan, miss = [];
+    if (!p.sex) miss.push("性別");
+    if (!p.age) miss.push("年齢");
+    if (!p.act) miss.push("運動量");
+    if (!pl.kg) miss.push("何kg痩せたいか");
+    if (!pl.months) miss.push("何か月で");
+    return miss;
+  }
+  const planMsg = (cls, html) => { const m = $("planMsg"); m.className = "plan-msg " + cls; m.innerHTML = html; };
+
+  // 確認の小窓（ダイアログ）は使わず、すぐ設定して「元に戻す」ボタンを出す
+  let undoGoal = null;
   $("applyPlan").onclick = () => {
     const r = calcPlan();
-    if (!(r.target > 0)) return;
-    const extra = r.pace > 1 ? "\n※ペースが速めだよ" : "";
-    if (!confirm(`1日の目標を ${r.target.toLocaleString()} kcal${r.goalW != null ? `、目標体重を ${fmt1(r.goalW)} kg` : ""} にするね。いい？${extra}`)) return;
+    if (!(r.target > 0)) {
+      const miss = missingPlanItems();
+      planMsg("ng", miss.length
+        ? `まだ入ってない項目があるよ：${miss.join("・")}`
+        : r.eer ? "この期間だと計算が成り立たないよ。期間を延ばすか、目標kgを減らしてね" : (r.msg || "入力を見直してね"));
+      return;
+    }
+    undoGoal = { goal: data.goal, goalWeight: data.goalWeight };
     data.goal = r.target;
     if (r.goalW != null) data.goalWeight = r.goalW;
     data.plan.appliedAt = today();
@@ -839,7 +865,19 @@
     $("goal").value = data.goal;
     if (r.goalW != null) $("goalWeight").value = data.goalWeight;
     render();
+    planMsg("ok", `✓ 1日の目標を ${r.target.toLocaleString()} kcal${r.goalW != null ? `、目標体重を ${fmt1(r.goalW)} kg` : ""} にしたよ<button type="button" id="undoPlan">元に戻す</button>`);
   };
+  $("planMsg").addEventListener("click", (e) => {
+    if (e.target.id !== "undoPlan" || !undoGoal) return;
+    data.goal = undoGoal.goal;
+    data.goalWeight = undoGoal.goalWeight;
+    undoGoal = null;
+    save();
+    $("goal").value = data.goal || "";
+    $("goalWeight").value = data.goalWeight || "";
+    render();
+    planMsg("", "元に戻したよ");
+  });
 
   // ---- アドバイス（決まったルールで出す） ----
   $("advice").addEventListener("click", (e) => {
