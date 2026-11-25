@@ -186,6 +186,16 @@
   svg.chart text { font-family: inherit; fill: var(--sub); font-size: 11px; }
   .chart-empty { color: var(--sub); font-size: 14px; text-align: center; padding: 40px 0; }
 
+  /* 歩いた記録 */
+  .walk-total { font-size: 14px; color: var(--sub); }
+  .walk-total b { font-size: 24px; color: var(--text); }
+  .walk-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+  .walk-item:last-child { border-bottom: none; }
+  .walk-item > span:first-child { padding-right: 8px; }
+  .walk-item > span:last-child { display: flex; align-items: center; white-space: nowrap; }
+  .walk-item small { display: block; color: var(--sub); font-size: 12px; margin-top: 2px; }
+  .chip .x { margin-left: 6px; color: var(--sub); }
+
   /* 目標プラン */
   details.plan > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
   details.plan > summary::-webkit-details-marker { display: none; }
@@ -308,6 +318,37 @@
     <div class="note" id="goalWeightNote"></div>
   </div>
 
+  <!-- 歩いた記録 -->
+  <div class="card">
+    <p class="section-title">🚶 歩いた記録</p>
+    <div class="walk-total" id="walkTotal"></div>
+    <div id="routeWrap" style="display:none">
+      <label>いつものルート（タップで追加）</label>
+      <div class="chips" id="routes"></div>
+    </div>
+    <div class="row">
+      <div style="flex:0 0 110px"><label for="walkKm">距離</label><input type="number" id="walkKm" min="0" step="0.1" inputmode="decimal" placeholder="km"></div>
+      <div>
+        <label for="walkSpeed">歩く速さ</label>
+        <select id="walkSpeed"></select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="addWalk">追加する</button>
+      <button id="saveRoute">いつものルートに登録</button>
+    </div>
+    <div id="routeForm" style="display:none">
+      <label for="routeName">ルートの名前</label>
+      <div class="weight-row">
+        <input type="text" id="routeName" placeholder="例：大学まで（行き）">
+        <button id="routeOk">登録</button>
+      </div>
+    </div>
+    <div class="note" id="walkNote"></div>
+    <div id="walkList"></div>
+    <div class="source">計算のもと：消費カロリー ＝ メッツ × 時間 × 体重 × 1.05（横浜市）。歩く速さごとのメッツは健康長寿ネットの表。目標kcalには足さずに、記録として表示するよ。</div>
+  </div>
+
   <!-- 入力 -->
   <div class="card" id="formCard">
     <p class="section-title"><span id="formTitle">食べたものを追加</span><span class="edit-badge">編集中</span></p>
@@ -413,6 +454,8 @@
     d.profile ||= {};      // からだの情報（性別・年齢・身長・運動量）
     d.plan ||= {};         // 何kgを何か月で
     d.balanced ||= {};     // 主食・主菜・副菜がそろった食事の回数（日付ごと）
+    d.walks ||= {};        // 歩いた記録（日付ごと）
+    d.routes ||= [];       // いつものルート
     return d;
   }
   normalize(data);
@@ -469,7 +512,7 @@
   // ---- 連続記録日数 ----
   // 食事か体重を記録した日が何日続いているか（今日まだなら昨日から数える）
   function renderStreak() {
-    const recorded = (d) => hasFood(d) || data.weights[d] != null;
+    const recorded = (d) => hasFood(d) || data.weights[d] != null || (data.walks[d] || []).length > 0;
     let d = today();
     if (!recorded(d)) d = addDays(d, -1);
     let n = 0;
@@ -879,6 +922,134 @@
     planMsg("", "元に戻したよ");
   });
 
+  // ---- 歩いた記録 ----
+  // 出典：健康長寿ネット（長寿科学振興財団）の歩行のメッツ表（平地）
+  const SPEEDS = {
+    slow:  { label: "ゆっくり", mpm: 53, mets: 2.8, desc: "毎分53m" },
+    norm:  { label: "ふつう", mpm: 67, mets: 3.0, desc: "毎分67m" },
+    mod:   { label: "ほどほど", mpm: 80, mets: 3.5, desc: "毎分75〜85m" },
+    brisk: { label: "やや速歩き", mpm: 93, mets: 4.3, desc: "毎分93m" },
+    fast:  { label: "かなり速歩き", mpm: 107, mets: 5.0, desc: "毎分107m" },
+  };
+  $("walkSpeed").innerHTML = Object.entries(SPEEDS).map(([k, s]) => `<option value="${k}">${s.label}（${s.desc}）</option>`).join("");
+  $("walkSpeed").value = "mod";
+
+  // 横浜市：消費カロリー ＝ メッツ・時 × 体重 × 1.05
+  function walkCalc(km, speedKey, weight) {
+    const s = SPEEDS[speedKey];
+    const min = (km * 1000) / s.mpm;
+    const h = min / 60;
+    return {
+      min: Math.round(min),
+      kcal: Math.round(s.mets * h * weight * 1.05),
+      net: Math.round((s.mets - 1) * h * weight * 1.05), // 安静時の分を除いた目安
+    };
+  }
+  const walks = (d) => data.walks[d] || [];
+  const walkKcal = (d) => walks(d).reduce((a, w) => a + w.kcal, 0);
+  const walkKmSum = (d) => walks(d).reduce((a, w) => a + w.km, 0);
+
+  function addWalk(km, speed, name) {
+    const day = $("date").value;
+    const lw = latestWeight(day);
+    if (!lw) {
+      $("walkNote").innerHTML = '<span style="color:var(--warn);font-weight:600">消費カロリーの計算に体重が必要だよ。上の「体重」を先に記録してね</span>';
+      return false;
+    }
+    const c = walkCalc(km, speed, lw.v);
+    (data.walks[day] ||= []).push({ id: newId(), km, speed, name: name || "", weight: lw.v, ...c });
+    save();
+    $("walkNote").textContent = `${name ? name + "：" : ""}${km}km・約${c.min}分で、約${c.kcal}kcal 使ったよ`;
+    renderWalks();
+    renderReview();
+    return true;
+  }
+  const readWalkInput = () => {
+    const km = parseFloat($("walkKm").value);
+    if (!(km > 0)) { $("walkKm").focus(); $("walkNote").textContent = "距離を入れてね"; return null; }
+    return { km: Math.round(km * 100) / 100, speed: $("walkSpeed").value };
+  };
+  $("addWalk").onclick = () => {
+    const w = readWalkInput();
+    if (w && addWalk(w.km, w.speed)) $("walkKm").value = "";
+  };
+  $("saveRoute").onclick = () => {
+    if (!readWalkInput()) return;
+    $("routeForm").style.display = "block";
+    $("routeName").focus();
+  };
+  $("routeOk").onclick = () => {
+    const w = readWalkInput();
+    const name = $("routeName").value.trim();
+    if (!w) return;
+    if (!name) { $("routeName").focus(); return; }
+    data.routes.push({ id: newId(), name, km: w.km, speed: w.speed });
+    save();
+    $("routeName").value = "";
+    $("routeForm").style.display = "none";
+    $("walkNote").textContent = `「${name}」を登録したよ。次からはタップするだけで記録できる`;
+    renderWalks();
+  };
+
+  function renderWalks() {
+    const day = $("date").value;
+    const ws = walks(day);
+    const kcal = walkKcal(day), min = ws.reduce((a, w) => a + w.min, 0);
+    $("walkTotal").innerHTML = ws.length
+      ? `この日 <b>${kcal.toLocaleString()}</b> kcal 使った（${fmt1(walkKmSum(day))}km・約${min}分）`
+      : "距離を入れると、歩いて使ったカロリーが出るよ";
+
+    // いつものルート
+    $("routeWrap").style.display = data.routes.length ? "block" : "none";
+    const rb = $("routes");
+    rb.innerHTML = "";
+    data.routes.forEach((r) => {
+      const c = document.createElement("button");
+      c.className = "chip set";
+      c.innerHTML = `＋ ${r.name.replace(/[<>&]/g, "")}（${r.km}km・${SPEEDS[r.speed].label}）<span class="x" aria-label="ルートを削除">×</span>`;
+      c.onclick = (e) => {
+        if (e.target.classList.contains("x")) {
+          data.routes = data.routes.filter((x) => x.id !== r.id);
+          save();
+          renderWalks();
+          $("walkNote").textContent = `ルート「${r.name}」を消したよ`;
+          return;
+        }
+        addWalk(r.km, r.speed, r.name);
+      };
+      rb.appendChild(c);
+    });
+
+    // この日の一覧
+    const list = $("walkList");
+    list.innerHTML = "";
+    ws.forEach((w) => {
+      const row = document.createElement("div");
+      row.className = "walk-item";
+      const left = document.createElement("span");
+      left.textContent = `${w.name || "歩いた"} ${w.km}km`;
+      const sm = document.createElement("small");
+      sm.textContent = `${SPEEDS[w.speed].label}・約${w.min}分・安静時の分を除くと約${w.net}kcal`;
+      left.appendChild(sm);
+      const right = document.createElement("span");
+      right.innerHTML = `<b>${w.kcal}</b> kcal`;
+      const del = document.createElement("button");
+      del.className = "del";
+      del.textContent = "×";
+      del.setAttribute("aria-label", "削除");
+      del.onclick = () => {
+        data.walks[day] = walks(day).filter((x) => x.id !== w.id);
+        if (!data.walks[day].length) delete data.walks[day];
+        save();
+        renderWalks();
+        renderReview();
+      };
+      right.appendChild(del);
+      row.append(left, right);
+      list.appendChild(row);
+    });
+  }
+
   // ---- アドバイス（決まったルールで出す） ----
   $("advice").addEventListener("click", (e) => {
     const b = e.target.closest("[data-bal]");
@@ -973,6 +1144,8 @@
     const avg = recDays.length ? Math.round(recDays.reduce((a, d) => a + dayTotal(d), 0) / recDays.length) : null;
     const ws = days.filter((d) => data.weights[d] != null);
     const wDiff = ws.length >= 2 ? data.weights[ws[ws.length - 1]] - data.weights[ws[0]] : null;
+    const wkKm = days.reduce((a, d) => a + walkKmSum(d), 0);
+    const wkKcal = days.reduce((a, d) => a + walkKcal(d), 0);
 
     const top = data.goal
       ? `<div class="record-big">${win}日 目標達成<small>${win + lose ? `（記録した${win + lose}日のうち）` : ""}</small></div>`
@@ -990,6 +1163,8 @@
         <div class="stat"><div class="k">体重の変化</div><div class="v">${wDiff != null ? signed(wDiff) + " <small>kg</small>" : "－"}</div></div>
         <div class="stat"><div class="k">食事を記録した日</div><div class="v">${recDays.length} <small>/ 7日</small></div></div>
         <div class="stat"><div class="k">${toDate(end).getMonth() + 1}月の目標達成</div><div class="v">${data.goal ? `${monthWin} <small>日</small>` : "－"}</div></div>
+        <div class="stat"><div class="k">歩いた距離</div><div class="v">${wkKm ? fmt1(wkKm) + " <small>km</small>" : "－"}</div></div>
+        <div class="stat"><div class="k">歩いて使ったカロリー</div><div class="v">${wkKcal ? wkKcal.toLocaleString() + " <small>kcal</small>" : "－"}</div></div>
       </div>`;
   }
 
@@ -1200,6 +1375,7 @@
     renderSets();
     renderList();
     renderRecent();
+    renderWalks();
     renderPlan();
     renderAdvice();
     renderReview();
