@@ -155,7 +155,7 @@
   .chip { background: var(--bg); color: var(--text); font-weight: 400; font-size: 13px; padding: 6px 10px; border-radius: 99px; }
   .chip.set { background: var(--main-light); color: var(--main); font-weight: 600; }
 
-  /* 戦績 */
+  /* ふりかえり */
   .record-big { font-size: 28px; font-weight: 700; }
   .record-big small { font-size: 14px; color: var(--sub); font-weight: 400; margin-left: 6px; }
   .matches { display: flex; gap: 6px; margin: 12px 0 4px; }
@@ -288,9 +288,9 @@
     <div class="hint" id="listHint" style="display:none">記録をタップすると直せるよ／「☆セット」でいつものメニューとして登録</div>
   </div>
 
-  <!-- 戦績（ふりかえり） -->
+  <!-- ふりかえり -->
   <div class="card">
-    <p class="section-title">⚽ この7日間の戦績</p>
+    <p class="section-title">この7日間のふりかえり</p>
     <div id="review"></div>
   </div>
 
@@ -374,7 +374,7 @@
   const items = (d) => data.days[d] || [];
   const dayTotal = (d) => items(d).reduce((s, x) => s + x.kcal, 0);
   const hasFood = (d) => items(d).length > 0;
-  // 試合結果：目標以下なら勝ち、超えたら負け、食事の記録がない日は試合なし
+  // 目標達成：目標以下なら達成（win）、超えたらオーバー（lose）、食事の記録がない日は判定なし
   const result = (d) => (!data.goal || !hasFood(d) ? null : dayTotal(d) <= data.goal ? "win" : "lose");
   // 最新の体重（指定日まで）
   const latestWeight = (upTo) => {
@@ -600,7 +600,7 @@
     const bar = $("bar"), remain = $("remain"), res = $("dayResult");
     const r = result(day);
     res.className = "result " + (r || "none");
-    res.textContent = r === "win" ? "⚽ 勝ち" : r === "lose" ? "負け" : "";
+    res.textContent = r === "win" ? "✓ 目標達成" : r === "lose" ? "オーバー" : "";
     if (data.goal) {
       bar.firstElementChild.style.width = Math.min(100, (total / data.goal) * 100) + "%";
       const left = data.goal - total;
@@ -668,7 +668,7 @@
     });
   }
 
-  // ---- 戦績・ふりかえり ----
+  // ---- ふりかえり ----
   function renderReview() {
     const end = $("date").value;
     const days = Array.from({ length: 7 }, (_, i) => addDays(end, i - 6));
@@ -676,7 +676,7 @@
     const res = days.map(result);
     const win = res.filter((r) => r === "win").length, lose = res.filter((r) => r === "lose").length;
 
-    // 今月の勝ち点（勝ち＝3点）
+    // 今月の達成日数
     const monthStart = end.slice(0, 8) + "01";
     let monthWin = 0;
     for (let d = monthStart; d <= end; d = addDays(d, 1)) if (result(d) === "win") monthWin++;
@@ -688,11 +688,11 @@
     const wDiff = ws.length >= 2 ? data.weights[ws[ws.length - 1]] - data.weights[ws[0]] : null;
 
     const top = data.goal
-      ? `<div class="record-big">${win}勝 ${lose}敗<small>勝ち点 ${win * 3}</small></div>`
-      : `<div class="note" style="margin:0 0 4px">1日の目標kcalを入れると、目標以下なら「勝ち」、超えたら「負け」で戦績がつくよ</div>`;
+      ? `<div class="record-big">${win}日 目標達成<small>${win + lose ? `（記録した${win + lose}日のうち）` : ""}</small></div>`
+      : `<div class="note" style="margin:0 0 4px">1日の目標kcalを入れると、目標を守れた日に ✓ がつくよ</div>`;
     const dots = days.map((d, i) => {
       const r = res[i];
-      const mark = r === "win" ? "勝" : r === "lose" ? "負" : "－";
+      const mark = r === "win" ? "✓" : r === "lose" ? "×" : "－";
       return `<div class="match${d === end ? " today" : ""}"><div class="dot ${r || ""}">${mark}</div>${weekday(d)}</div>`;
     }).join("");
     box.innerHTML = `
@@ -702,7 +702,7 @@
         <div class="stat"><div class="k">平均カロリー</div><div class="v">${avg != null ? avg.toLocaleString() + " <small>kcal</small>" : "－"}</div></div>
         <div class="stat"><div class="k">体重の変化</div><div class="v">${wDiff != null ? signed(wDiff) + " <small>kg</small>" : "－"}</div></div>
         <div class="stat"><div class="k">食事を記録した日</div><div class="v">${recDays.length} <small>/ 7日</small></div></div>
-        <div class="stat"><div class="k">${toDate(end).getMonth() + 1}月の勝ち点</div><div class="v">${data.goal ? monthWin * 3 : "－"} <small>${data.goal ? `（${monthWin}勝）` : ""}</small></div></div>
+        <div class="stat"><div class="k">${toDate(end).getMonth() + 1}月の目標達成</div><div class="v">${data.goal ? `${monthWin} <small>日</small>` : "－"}</div></div>
       </div>`;
   }
 
